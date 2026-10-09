@@ -1,634 +1,428 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Koopa 64 - Upgraded</title>
-    <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            background-color: #55b4ff;
-            font-family: 'Courier New', Courier, monospace;
-            user-select: none;
-        }
-        #game-container {
-            width: 100vw;
-            height: 100vh;
-            display: block;
-        }
-        #ui-layer {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: white;
-            text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
-            pointer-events: none;
-        }
-        h1 { margin: 0; font-size: 28px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; color: #ffeb3b;}
-        p { margin: 5px 0 0 0; font-size: 16px; font-weight: bold; }
-        
-        #controls-help {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 15px;
-            border-radius: 8px;
-            border: 2px solid #fff;
-            color: white;
-            font-size: 14px;
-            pointer-events: none;
-        }
-        .key {
-            display: inline-block;
-            background: #ddd;
-            color: #111;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-weight: bold;
-            margin: 0 2px;
-            box-shadow: 0 2px 0 #888;
-        }
-    </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bob-omb Battlefield Mountain Airport</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #fff;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 14px;
+      border-radius: 8px;
+      pointer-events: none;
+    }
+  </style>
 </head>
 <body>
+  <div id="ui">
+    <h3>Bob-omb Mountain Airport</h3>
+    <p><b>WASD / Arrows:</b> Move / Fly</p>
+    <p><b>Space:</b> Jump / Ascend Plane</p>
+    <p><b>Shift:</b> Descend Plane</p>
+    <p><b>E:</b> Board / Exit Plane (Near Plane)</p>
+    <p id="status">Mode: Walking</p>
+  </div>
 
-    <div id="ui-layer">
-        <h1>Koopa 64</h1>
-        <p>Bob-omb Battlefield (Classic)</p>
-    </div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
 
-    <div id="start-screen" style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; color: white; flex-direction: column; cursor: pointer; z-index: 10; font-family: 'Courier New', Courier, monospace;">
-        <h2 style="font-size: 36px; margin-bottom: 10px; text-shadow: 2px 2px 0 #000;">Click to Play</h2>
-        <p style="font-size: 18px;">(Requires Pointer Lock for Mouse Look)</p>
-    </div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-    <div id="controls-help">
-        Move: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span><br><br>
-        Look: <b>Mouse</b><br><br>
-        Jump: <span class="key">SPACE</span>
-    </div>
+    // --- Scene Setup ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x70c0ff);
+    scene.fog = new THREE.FogExp2(0x70c0ff, 0.002);
 
-    <canvas id="game-container"></canvas>
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
 
-    <script>
-        const canvas = document.getElementById('game-container');
-        const renderer = new THREE.WebGLRenderer({ canvas, antialias: false }); // false for pixelated retro look
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFShadowMap;
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambientLight);
 
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x55b4ff); // Bright Sky Blue
-        scene.fog = new THREE.Fog(0x55b4ff, 50, 300);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(100, 200, 80);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
 
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+    const colliders = [];
+    const planes = [];
+
+    // --- Materials ---
+    const grassMat = new THREE.MeshStandardMaterial({ color: 0x41b333, roughness: 0.8 });
+    const cliffMat = new THREE.MeshStandardMaterial({ color: 0xb57032, roughness: 0.9 });
+    const pathMat  = new THREE.MeshStandardMaterial({ color: 0xcc9c58, roughness: 0.9 });
+    const rockMat  = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.7 });
+    const woodMat  = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.8 });
+    const fenceMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5 });
+    const padMat   = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.6 });
+
+    // --- Recreating Bob-omb Battlefield Map ---
+    function buildMap() {
+      const mapGroup = new THREE.Group();
+
+      // Outer Boundary Ring Hills
+      const outerRingGeo = new THREE.RingGeometry(120, 220, 32);
+      outerRingGeo.rotateX(-Math.PI / 2);
+      const outerRing = new THREE.Mesh(
+        new THREE.CylinderGeometry(200, 140, 60, 32, 1, true),
+        grassMat
+      );
+      outerRing.position.y = 20;
+      mapGroup.add(outerRing);
+
+      // Main Ground Basin
+      const mainGround = new THREE.Mesh(new THREE.CylinderGeometry(140, 140, 2, 32), grassMat);
+      mainGround.position.y = -1;
+      mapGroup.add(mainGround);
+      colliders.push(mainGround);
+
+      // --- Left Main Tiered Mountain (Airport Base) ---
+      const mtnPos = { x: -35, z: -35 };
+
+      // Tier 1 (Base)
+      const t1Wall = new THREE.Mesh(new THREE.CylinderGeometry(45, 50, 16, 24), cliffMat);
+      t1Wall.position.set(mtnPos.x, 8, mtnPos.z);
+      mapGroup.add(t1Wall);
+      const t1Top = new THREE.Mesh(new THREE.CylinderGeometry(45, 45, 1, 24), grassMat);
+      t1Top.position.set(mtnPos.x, 16.5, mtnPos.z);
+      mapGroup.add(t1Top);
+      colliders.push(t1Top);
+
+      // Tier 2 (Middle)
+      const t2Wall = new THREE.Mesh(new THREE.CylinderGeometry(30, 35, 16, 24), cliffMat);
+      t2Wall.position.set(mtnPos.x, 24, mtnPos.z);
+      mapGroup.add(t2Wall);
+      const t2Top = new THREE.Mesh(new THREE.CylinderGeometry(30, 30, 1, 24), grassMat);
+      t2Top.position.set(mtnPos.x, 32.5, mtnPos.z);
+      mapGroup.add(t2Top);
+      colliders.push(t2Top);
+
+      // Tier 3 (Summit Plateau - Airport Location)
+      const t3Wall = new THREE.Mesh(new THREE.CylinderGeometry(18, 22, 14, 24), cliffMat);
+      t3Wall.position.set(mtnPos.x, 39, mtnPos.z);
+      mapGroup.add(t3Wall);
+      const t3Top = new THREE.Mesh(new THREE.CylinderGeometry(18, 18, 1, 24), grassMat);
+      t3Top.position.set(mtnPos.x, 46.5, mtnPos.z);
+      mapGroup.add(t3Top);
+      colliders.push(t3Top);
+
+      // Winding Path Ramps around Mountain
+      const ramp1 = new THREE.Mesh(new THREE.BoxGeometry(12, 1, 35), pathMat);
+      ramp1.position.set(mtnPos.x + 32, 8, mtnPos.z + 10);
+      ramp1.rotation.x = 0.35;
+      ramp1.rotation.y = -0.2;
+      mapGroup.add(ramp1);
+      colliders.push(ramp1);
+
+      const ramp2 = new THREE.Mesh(new THREE.BoxGeometry(10, 1, 28), pathMat);
+      ramp2.position.set(mtnPos.x + 10, 24, mtnPos.z + 24);
+      ramp2.rotation.z = -0.35;
+      ramp2.rotation.y = 0.5;
+      mapGroup.add(ramp2);
+      colliders.push(ramp2);
+
+      // Wooden Bridge Jutting out on Tier 2
+      const bridge = new THREE.Mesh(new THREE.BoxGeometry(6, 0.8, 14), woodMat);
+      bridge.position.set(mtnPos.x + 20, 33, mtnPos.z - 15);
+      bridge.rotation.y = Math.PI / 4;
+      mapGroup.add(bridge);
+      colliders.push(bridge);
+
+      // --- Gray Cave / Tunnel Mountain ---
+      const caveMtn = new THREE.Mesh(new THREE.DodecahedronGeometry(22, 2), rockMat);
+      caveMtn.position.set(mtnPos.x + 40, 12, mtnPos.z + 10);
+      caveMtn.scale.set(1.2, 0.8, 1.2);
+      mapGroup.add(caveMtn);
+      colliders.push(caveMtn);
+
+      // Tunnel Opening Frame
+      const tunnelBox = new THREE.Mesh(new THREE.BoxGeometry(12, 10, 16), rockMat);
+      tunnelBox.position.set(mtnPos.x + 22, 5, mtnPos.z + 10);
+      mapGroup.add(tunnelBox);
+
+      // Gate / Fence Structure
+      const fence = new THREE.Mesh(new THREE.BoxGeometry(0.5, 8, 14), fenceMat);
+      fence.position.set(mtnPos.x + 15, 6, mtnPos.z + 10);
+      mapGroup.add(fence);
+
+      // --- Right Elevated Curved Lawn & Fence ---
+      const rightLawn = new THREE.Mesh(new THREE.CylinderGeometry(28, 32, 10, 20), cliffMat);
+      rightLawn.position.set(35, 5, 10);
+      mapGroup.add(rightLawn);
+      const rightLawnTop = new THREE.Mesh(new THREE.CylinderGeometry(28, 28, 1, 20), grassMat);
+      rightLawnTop.position.set(35, 10.5, 10);
+      mapGroup.add(rightLawnTop);
+      colliders.push(rightLawnTop);
+
+      // Curved Dark Green Wall / Railing on Right Lawn
+      const railing = new THREE.Mesh(new THREE.TorusGeometry(26, 0.8, 8, 24, Math.PI), fenceMat);
+      railing.position.set(35, 12, 10);
+      railing.rotation.x = Math.PI / 2;
+      railing.rotation.z = -Math.PI / 4;
+      mapGroup.add(railing);
+
+      // --- Floating Island ---
+      const floatIslandTop = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, 1.5, 16), grassMat);
+      floatIslandTop.position.set(45, 42, -20);
+      mapGroup.add(floatIslandTop);
+      colliders.push(floatIslandTop);
+
+      const floatIslandBottom = new THREE.Mesh(new THREE.ConeGeometry(12, 12, 16), cliffMat);
+      floatIslandBottom.position.set(45, 35, -20);
+      floatIslandBottom.rotation.x = Math.PI;
+      mapGroup.add(floatIslandBottom);
+
+      // --- Dirt Paths & Stone Pads ---
+      const pathRibbon = new THREE.Mesh(new THREE.PlaneGeometry(12, 110), pathMat);
+      pathRibbon.rotation.x = -Math.PI / 2;
+      pathRibbon.rotation.z = 0.4;
+      pathRibbon.position.set(10, 0.1, 10);
+      mapGroup.add(pathRibbon);
+
+      // Stone Pads
+      const pad1 = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.4, 16), padMat);
+      pad1.position.set(-15, 0.2, 35);
+      mapGroup.add(pad1);
+
+      const pad2 = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 0.4, 16), padMat);
+      pad2.position.set(25, 0.2, 55);
+      mapGroup.add(pad2);
+
+      // Ground Boulders
+      const rock1 = new THREE.Mesh(new THREE.DodecahedronGeometry(3.5), rockMat);
+      rock1.position.set(-10, 2, 20);
+      mapGroup.add(rock1);
+      colliders.push(rock1);
+
+      const rock2 = new THREE.Mesh(new THREE.DodecahedronGeometry(4), rockMat);
+      rock2.position.set(30, 2, -25);
+      mapGroup.add(rock2);
+      colliders.push(rock2);
+
+      // --- Airport on Top Left Mountain Summit ---
+      const runway = new THREE.Mesh(new THREE.BoxGeometry(16, 0.6, 28), fenceMat);
+      runway.position.set(mtnPos.x, 47, mtnPos.z);
+      mapGroup.add(runway);
+      colliders.push(runway);
+
+      scene.add(mapGroup);
+      return mtnPos;
+    }
+
+    const mtnPos = buildMap();
+
+    // --- Planes on Mountain Airport ---
+    function createPlane(x, y, z) {
+      const planeGroup = new THREE.Group();
+      
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.8, 0.8, 6, 8),
+        new THREE.MeshStandardMaterial({ color: 0xe74c3c })
+      );
+      body.rotation.x = Math.PI / 2;
+      planeGroup.add(body);
+
+      const wings = new THREE.Mesh(
+        new THREE.BoxGeometry(10, 0.1, 1.8),
+        new THREE.MeshStandardMaterial({ color: 0xf1c40f })
+      );
+      wings.position.set(0, 0.2, 0);
+      planeGroup.add(wings);
+
+      const tail = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 1.5, 1.2),
+        new THREE.MeshStandardMaterial({ color: 0xe74c3c })
+      );
+      tail.position.set(0, 1, -2.4);
+      planeGroup.add(tail);
+
+      planeGroup.position.set(x, y, z);
+      scene.add(planeGroup);
+      planes.push(planeGroup);
+    }
+
+    // Spawn 2 Planes at the Left Mountain Airport Summit
+    createPlane(mtnPos.x - 4, 48, mtnPos.z - 4);
+    createPlane(mtnPos.x + 4, 48, mtnPos.z - 4);
+
+    // --- Turtle Model Helper ---
+    function createTurtleMesh() {
+      const group = new THREE.Group();
+      const shell = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 16, 16),
+        new THREE.MeshStandardMaterial({ color: 0x27ae60 })
+      );
+      shell.scale.set(1, 0.5, 1.2);
+      shell.position.y = 0.8;
+      group.add(shell);
+
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf1c40f });
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 12), bodyMat);
+      head.position.set(0, 0.9, 1.2);
+      group.add(head);
+
+      return group;
+    }
+
+    // Spawn Airport Worker Turtles around Mountain Summit
+    for (let i = -8; i <= 8; i += 8) {
+      const worker = createTurtleMesh();
+      worker.position.set(mtnPos.x + i, 47, mtnPos.z + 8);
+      worker.scale.set(1.2, 1.2, 1.2);
+      scene.add(worker);
+    }
+
+    // --- Player System ---
+    const playerMesh = new THREE.Group();
+    const defaultAvatar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5, 0.5, 1.8),
+      new THREE.MeshStandardMaterial({ color: 0x3498db })
+    );
+    defaultAvatar.position.y = 0.9;
+    playerMesh.add(defaultAvatar);
+    scene.add(playerMesh);
+
+    const playerState = {
+      isFlying: false,
+      position: new THREE.Vector3(0, 2, 40), // Start near path
+      velocity: new THREE.Vector3(),
+      activePlane: null
+    };
+
+    function setTurtleAvatar(enable) {
+      playerMesh.clear();
+      if (enable) {
+        const turtle = createTurtleMesh();
+        turtle.scale.set(1.2, 1.2, 1.2);
+        playerMesh.add(turtle);
+      } else {
+        playerMesh.add(defaultAvatar);
+      }
+    }
+
+    // --- Controls ---
+    const keys = {};
+    window.addEventListener('keydown', (e) => {
+      keys[e.code] = true;
+      if (e.code === 'KeyE') togglePlane();
+    });
+    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    function togglePlane() {
+      if (playerState.isFlying) {
+        // Exit Plane
+        playerState.isFlying = false;
+        playerState.activePlane = null;
+        setTurtleAvatar(false);
+        playerState.position.y += 2;
+        document.getElementById('status').innerText = "Mode: Walking";
+      } else {
+        // Board Plane
+        planes.forEach((plane) => {
+          if (playerState.position.distanceTo(plane.position) < 6) {
+            playerState.isFlying = true;
+            playerState.activePlane = plane;
+            setTurtleAvatar(true); // Turtle pilot transformation
+            document.getElementById('status').innerText = "Mode: Flying (Turtle Pilot)";
+          }
         });
+      }
+    }
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        scene.add(ambientLight);
+    // --- Physics & Game Loop ---
+    const clock = new THREE.Clock();
 
-        const dirLight = new THREE.DirectionalLight(0xffffee, 0.8);
-        dirLight.position.set(100, 150, 100);
-        dirLight.castShadow = true;
-        dirLight.shadow.camera.top = 150;
-        dirLight.shadow.camera.bottom = -150;
-        dirLight.shadow.camera.left = -150;
-        dirLight.shadow.camera.right = 150;
-        dirLight.shadow.camera.near = 0.1;
-        dirLight.shadow.camera.far = 400;
-        dirLight.shadow.mapSize.width = 1024;
-        dirLight.shadow.mapSize.height = 1024;
-        scene.add(dirLight);
+    function update() {
+      const delta = clock.getDelta();
+      const speed = 15 * delta;
+      const flySpeed = 35 * delta;
 
-        function createRetroTexture(type) {
-            const size = 64;
-            const cvs = document.createElement('canvas');
-            cvs.width = size; cvs.height = size;
-            const ctx = cvs.getContext('2d');
+      if (playerState.isFlying && playerState.activePlane) {
+        const plane = playerState.activePlane;
+        if (keys['KeyW'] || keys['ArrowUp']) plane.translateZ(-flySpeed);
+        if (keys['KeyS'] || keys['ArrowDown']) plane.translateZ(flySpeed * 0.5);
+        if (keys['KeyA'] || keys['ArrowLeft']) plane.rotation.y += 1.8 * delta;
+        if (keys['KeyD'] || keys['ArrowRight']) plane.rotation.y -= 1.8 * delta;
+        if (keys['Space']) plane.position.y += flySpeed * 0.6;
+        if (keys['ShiftLeft']) plane.position.y -= flySpeed * 0.6;
 
-            if (type === 'grass') {
-                ctx.fillStyle = '#2d9c1e'; // Base green
-                ctx.fillRect(0, 0, size, size);
-                for(let i=0; i<300; i++) {
-                    ctx.fillStyle = Math.random() > 0.5 ? '#1f7a12' : '#45b535';
-                    ctx.fillRect(Math.floor(Math.random()*size), Math.floor(Math.random()*size), 2, 2);
-                }
-            } else if (type === 'dirt') {
-                ctx.fillStyle = '#8B4513'; // Base brown
-                ctx.fillRect(0, 0, size, size);
-                for(let i=0; i<400; i++) {
-                    ctx.fillStyle = Math.random() > 0.5 ? '#65310b' : '#a0522d';
-                    ctx.fillRect(Math.floor(Math.random()*size), Math.floor(Math.random()*size), 4, 4);
-                }
-            } else if (type === 'stone') {
-                ctx.fillStyle = '#888888'; // Base gray
-                ctx.fillRect(0, 0, size, size);
-                for(let i=0; i<300; i++) {
-                    ctx.fillStyle = Math.random() > 0.5 ? '#666666' : '#aaaaaa';
-                    ctx.fillRect(Math.floor(Math.random()*size), Math.floor(Math.random()*size), 4, 4);
-                }
-            } else if (type === 'wood') {
-                ctx.fillStyle = '#8B5A2B';
-                ctx.fillRect(0, 0, size, size);
-                for(let i=0; i<size; i+=4) {
-                    ctx.fillStyle = '#6b421a';
-                    ctx.fillRect(i, 0, 2, size);
-                }
-            }
+        playerState.position.copy(plane.position);
+        playerMesh.position.copy(plane.position);
+        playerMesh.rotation.copy(plane.rotation);
+      } else {
+        // Walking Controls
+        const moveDir = new THREE.Vector3();
+        if (keys['KeyW'] || keys['ArrowUp']) moveDir.z -= 1;
+        if (keys['KeyS'] || keys['ArrowDown']) moveDir.z += 1;
+        if (keys['KeyA'] || keys['ArrowLeft']) moveDir.x -= 1;
+        if (keys['KeyD'] || keys['ArrowRight']) moveDir.x += 1;
+        moveDir.normalize();
 
-            const tex = new THREE.CanvasTexture(cvs);
-            tex.magFilter = THREE.NearestFilter; // Crucial for pixelated N64 look
-            tex.minFilter = THREE.NearestFilter;
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.RepeatWrapping;
-            return tex;
+        playerState.velocity.y -= 30 * delta; // Gravity
+        playerState.position.y += playerState.velocity.y * delta;
+
+        playerState.position.x += moveDir.x * speed;
+        playerState.position.z += moveDir.z * speed;
+
+        // Ground Raycast Collision
+        const raycaster = new THREE.Raycaster(
+          playerState.position,
+          new THREE.Vector3(0, -1, 0)
+        );
+        const hits = raycaster.intersectObjects(colliders);
+        if (hits.length > 0 && hits[0].distance < 1.0) {
+          playerState.position.y = hits[0].point.y + 1.0;
+          playerState.velocity.y = 0;
+
+          if (keys['Space']) {
+            playerState.velocity.y = 12; // Jump
+          }
         }
 
-        const grassTex = createRetroTexture('grass');
-        const dirtTex = createRetroTexture('dirt');
-        const stoneTex = createRetroTexture('stone');
-        const woodTex = createRetroTexture('wood');
-
-        grassTex.repeat.set(10, 10);
-        dirtTex.repeat.set(2, 2);
-        stoneTex.repeat.set(1, 4);
-
-        const grassMat = new THREE.MeshLambertMaterial({ map: grassTex });
-        const dirtMat = new THREE.MeshLambertMaterial({ map: dirtTex });
-        const stoneMat = new THREE.MeshLambertMaterial({ map: stoneTex });
-        const woodMat = new THREE.MeshLambertMaterial({ map: woodTex });
-
-        // Array to hold objects for collision raycasting
-        const collidableMeshList = [];
-
-        function addCollidable(mesh) {
-            scene.add(mesh);
-            collidableMeshList.push(mesh);
-        }
-
-        // 1. Main Ground Plane
-        const groundGeo = new THREE.BoxGeometry(200, 10, 200);
-        const ground = new THREE.Mesh(groundGeo, grassMat);
-        ground.position.set(0, -5, 0); // Top of ground is at y=0
-        ground.receiveShadow = true;
-        addCollidable(ground);
-
-        // Water/Gap layer underneath everything
-        const waterGeo = new THREE.PlaneGeometry(400, 400);
-        const waterMat = new THREE.MeshBasicMaterial({ color: 0x1E90FF });
-        const water = new THREE.Mesh(waterGeo, waterMat);
-        water.rotation.x = -Math.PI / 2;
-        water.position.y = -15;
-        scene.add(water);
-
-        // 2. Mountain Tiers
-        // Tier 1
-        const tier1Geo = new THREE.BoxGeometry(80, 15, 80);
-        const tier1 = new THREE.Mesh(tier1Geo, [dirtMat, dirtMat, grassMat, dirtMat, dirtMat, dirtMat]);
-        tier1.position.set(0, 7.5, -60);
-        tier1.castShadow = true; tier1.receiveShadow = true;
-        addCollidable(tier1);
-
-        // Tier 2
-        const tier2Geo = new THREE.BoxGeometry(60, 15, 60);
-        const tier2 = new THREE.Mesh(tier2Geo, [dirtMat, dirtMat, grassMat, dirtMat, dirtMat, dirtMat]);
-        tier2.position.set(10, 22.5, -70);
-        tier2.castShadow = true; tier2.receiveShadow = true;
-        addCollidable(tier2);
-
-        // Tier 3 (Summit)
-        const tier3Geo = new THREE.BoxGeometry(40, 15, 40);
-        const tier3 = new THREE.Mesh(tier3Geo, [dirtMat, dirtMat, grassMat, dirtMat, dirtMat, dirtMat]);
-        tier3.position.set(20, 37.5, -80);
-        tier3.castShadow = true; tier3.receiveShadow = true;
-        addCollidable(tier3);
-
-        // 3. Ramps (Stone Paths)
-        // Ramp 1 (Ground to Tier 1)
-        const ramp1Geo = new THREE.BoxGeometry(15, 2, 45);
-        const ramp1 = new THREE.Mesh(ramp1Geo, stoneMat);
-        ramp1.position.set(-20, 7.5, -35);
-        ramp1.rotation.x = Math.PI / 8; // Slanted up
-        ramp1.castShadow = true; ramp1.receiveShadow = true;
-        addCollidable(ramp1);
-
-        // Ramp 2 (Tier 1 to Tier 2)
-        const ramp2Geo = new THREE.BoxGeometry(15, 2, 40);
-        const ramp2 = new THREE.Mesh(ramp2Geo, stoneMat);
-        ramp2.position.set(-15, 22.5, -60);
-        ramp2.rotation.z = -Math.PI / 8; // Slanted up sideways
-        ramp2.castShadow = true; ramp2.receiveShadow = true;
-        addCollidable(ramp2);
-
-        // Ramp 3 (Tier 2 to Tier 3)
-        const ramp3Geo = new THREE.BoxGeometry(10, 2, 35);
-        const ramp3 = new THREE.Mesh(ramp3Geo, stoneMat);
-        ramp3.position.set(20, 37.5, -55);
-        ramp3.rotation.x = Math.PI / 6;
-        ramp3.castShadow = true; ramp3.receiveShadow = true;
-        addCollidable(ramp3);
-
-        // 4. Bridge over a gap
-        // Create a hole/gap visually using blocks around it
-        const gapGeo = new THREE.BoxGeometry(40, 10, 20);
-        const gapBlocker = new THREE.Mesh(gapGeo, new THREE.MeshBasicMaterial({color: 0x55b4ff})); // Hide ground
-        gapBlocker.position.set(-50, -5, 20);
-        // We will handle actual falling death plane later
-
-        const bridgeGroup = new THREE.Group();
-        for(let i=0; i<10; i++) {
-            const plankGeo = new THREE.BoxGeometry(10, 0.5, 3);
-            const plank = new THREE.Mesh(plankGeo, woodMat);
-            plank.position.set(-50, 0.25, 5 + i * 3.2);
-            plank.castShadow = true; plank.receiveShadow = true;
-            bridgeGroup.add(plank);
-            addCollidable(plank);
-        }
-        scene.add(bridgeGroup);
-
-        // Trees
-        const leafTex = createRetroTexture('grass'); // Reuse green noise
-        const leafMat = new THREE.MeshLambertMaterial({ map: leafTex });
-
-        function createTree(x, y, z) {
-            const tree = new THREE.Group();
-            const trunkGeo = new THREE.CylinderGeometry(0.8, 1.2, 5, 5);
-            const trunk = new THREE.Mesh(trunkGeo, woodMat);
-            trunk.position.y = 2.5;
-            trunk.castShadow = true; trunk.receiveShadow = true;
-            tree.add(trunk);
-
-            const leavesGeo = new THREE.DodecahedronGeometry(3, 0); // Low poly ball
-            const leaves = new THREE.Mesh(leavesGeo, leafMat);
-            leaves.position.y = 6;
-            leaves.castShadow = true; leaves.receiveShadow = true;
-            tree.add(leaves);
-
-            tree.position.set(x, y, z);
-            scene.add(tree);
-            // Optional: make trunk collidable
-            addCollidable(trunk);
-        }
-
-        createTree(30, 0, 30);
-        createTree(-40, 0, -20);
-        createTree(25, 15, -80); // Tree on Tier 1
-        createTree(30, 45, -85); // Tree on Summit
-
-        // Floating Island
-        const islandGroup = new THREE.Group();
-        const islandBaseGeo = new THREE.ConeGeometry(15, 10, 8);
-        const islandBase = new THREE.Mesh(islandBaseGeo, dirtMat);
-        islandBase.rotation.x = Math.PI; // Point down
-        islandBase.position.y = -5;
-        islandGroup.add(islandBase);
-
-        const islandTopGeo = new THREE.CylinderGeometry(15, 15, 2, 8);
-        const islandTop = new THREE.Mesh(islandTopGeo, grassMat);
-        islandTop.position.y = 1;
-        islandGroup.add(islandTop);
-        
-        islandGroup.position.set(-60, 40, -80);
-        scene.add(islandGroup);
-        // Make top collidable if we can reach it
-        const islandCol = new THREE.Mesh(new THREE.BoxGeometry(25, 2, 25), new THREE.MeshBasicMaterial({visible:false}));
-        islandCol.position.set(-60, 40, -80);
-        addCollidable(islandCol);
-        createTree(-60, 41, -80);
-
-
-        const playerGroup = new THREE.Group();
-        scene.add(playerGroup);
-
-        // Colors based on prompt
-        const matYellow = new THREE.MeshLambertMaterial({ color: 0xFFD700 });
-        const matBeige = new THREE.MeshLambertMaterial({ color: 0xF5F5DC });
-        const matGreen = new THREE.MeshLambertMaterial({ color: 0x32CD32 });
-        const matWhite = new THREE.MeshLambertMaterial({ color: 0xFFFFFF });
-        const matBlack = new THREE.MeshBasicMaterial({ color: 0x111111 });
-
-        // Body Group
-        const koopaBody = new THREE.Group();
-        koopaBody.position.y = 2.5; // Offset from ground
-        playerGroup.add(koopaBody);
-
-        // Torso
-        const torsoGeo = new THREE.BoxGeometry(2, 2.5, 1.8);
-        const torso = new THREE.Mesh(torsoGeo, matYellow);
-        torso.castShadow = true;
-        koopaBody.add(torso);
-
-        // Beige Belly
-        const bellyGeo = new THREE.BoxGeometry(1.8, 2.2, 0.4);
-        const belly = new THREE.Mesh(bellyGeo, matBeige);
-        belly.position.set(0, 0, 0.95);
-        koopaBody.add(belly);
-
-        // Green Shell
-        const shellGeo = new THREE.DodecahedronGeometry(1.8, 0); // Hex/pentagon look
-        const shell = new THREE.Mesh(shellGeo, matGreen);
-        shell.scale.set(1, 1, 0.7);
-        shell.position.set(0, 0.2, -0.9);
-        shell.castShadow = true;
-        koopaBody.add(shell);
-
-        // Shell Rim (White)
-        const rimGeo = new THREE.TorusGeometry(1.6, 0.3, 4, 12);
-        const rim = new THREE.Mesh(rimGeo, matWhite);
-        rim.position.set(0, 0.2, -0.5);
-        rim.castShadow = true;
-        koopaBody.add(rim);
-
-        // Head Group (Rotates separately)
-        const headGroup = new THREE.Group();
-        headGroup.position.set(0, 2.2, 0.5);
-        koopaBody.add(headGroup);
-
-        // Head Base
-        const headGeo = new THREE.BoxGeometry(1.8, 1.8, 1.8);
-        const head = new THREE.Mesh(headGeo, matYellow);
-        head.castShadow = true;
-        headGroup.add(head);
-
-        // Prominent Beak/Snout
-        const beakGeo = new THREE.BoxGeometry(2.0, 1.2, 1.5);
-        // Shape it slightly like a wedge by scaling top vertices if we wanted, but Box is fine for N64 retro
-        const beak = new THREE.Mesh(beakGeo, matBeige);
-        beak.position.set(0, -0.3, 1.4);
-        beak.castShadow = true;
-        headGroup.add(beak);
-
-        // Eyes
-        const eyeGeo = new THREE.PlaneGeometry(0.3, 0.8);
-        const lEye = new THREE.Mesh(eyeGeo, matBlack);
-        lEye.position.set(-0.4, 0.5, 0.91);
-        headGroup.add(lEye);
-        const rEye = new THREE.Mesh(eyeGeo, matBlack);
-        rEye.position.set(0.4, 0.5, 0.91);
-        headGroup.add(rEye);
-
-        // Arms
-        const armGeo = new THREE.BoxGeometry(0.6, 1.8, 0.6);
-        const lArm = new THREE.Mesh(armGeo, matYellow);
-        lArm.position.set(-1.4, 0.2, 0);
-        lArm.castShadow = true;
-        koopaBody.add(lArm);
-        
-        const rArm = new THREE.Mesh(armGeo, matYellow);
-        rArm.position.set(1.4, 0.2, 0);
-        rArm.castShadow = true;
-        koopaBody.add(rArm);
-
-        // Legs Group (for walking animation)
-        const lLegGroup = new THREE.Group();
-        lLegGroup.position.set(-0.6, 1.2, 0);
-        playerGroup.add(lLegGroup);
-
-        const rLegGroup = new THREE.Group();
-        rLegGroup.position.set(0.6, 1.2, 0);
-        playerGroup.add(rLegGroup);
-
-        const legGeo = new THREE.BoxGeometry(0.7, 1.0, 0.7);
-        const lLeg = new THREE.Mesh(legGeo, matYellow);
-        lLeg.position.y = -0.5; lLeg.castShadow = true;
-        lLegGroup.add(lLeg);
-        
-        const rLeg = new THREE.Mesh(legGeo, matYellow);
-        rLeg.position.y = -0.5; rLeg.castShadow = true;
-        rLegGroup.add(rLeg);
-
-        // Green Shoes
-        const shoeGeo = new THREE.BoxGeometry(1.0, 0.6, 1.4);
-        const lShoe = new THREE.Mesh(shoeGeo, matGreen);
-        lShoe.position.set(0, -1.2, 0.2); lShoe.castShadow = true;
-        lLegGroup.add(lShoe);
-        
-        const rShoe = new THREE.Mesh(shoeGeo, matGreen);
-        rShoe.position.set(0, -1.2, 0.2); rShoe.castShadow = true;
-        rLegGroup.add(rShoe);
-
-
-        const keys = { w: false, a: false, s: false, d: false, space: false };
-        let cameraYaw = 0;
-        let cameraPitch = 0.2; // slight downward angle initially
-        const mouseSensitivity = 0.003;
-        
-        const startScreen = document.getElementById('start-screen');
-
-        startScreen.addEventListener('click', () => {
-            document.body.requestPointerLock();
-        });
-
-        document.addEventListener('pointerlockchange', () => {
-            if (document.pointerLockElement === document.body) {
-                startScreen.style.display = 'none';
-            } else {
-                startScreen.style.display = 'flex';
-            }
-        });
-
-        document.addEventListener('mousemove', (e) => {
-            if (document.pointerLockElement === document.body) {
-                cameraYaw -= e.movementX * mouseSensitivity;
-                cameraPitch -= e.movementY * mouseSensitivity;
-                
-                // Clamp pitch so camera doesn't flip over or go too far below ground
-                cameraPitch = Math.max(-Math.PI / 4, Math.min(Math.PI / 2.5, cameraPitch));
-            }
-        });
-
-        window.addEventListener('keydown', (e) => {
-            const key = e.key.toLowerCase();
-            if (key === 'w' || key === 'arrowup') keys.w = true;
-            if (key === 's' || key === 'arrowdown') keys.s = true;
-            if (key === 'a' || key === 'arrowleft') keys.a = true;
-            if (key === 'd' || key === 'arrowright') keys.d = true;
-            if (key === ' ' || key === 'spacebar') keys.space = true;
-        });
-
-        window.addEventListener('keyup', (e) => {
-            const key = e.key.toLowerCase();
-            if (key === 'w' || key === 'arrowup') keys.w = false;
-            if (key === 's' || key === 'arrowdown') keys.s = false;
-            if (key === 'a' || key === 'arrowleft') keys.a = false;
-            if (key === 'd' || key === 'arrowright') keys.d = false;
-            if (key === ' ' || key === 'spacebar') keys.space = false;
-        });
-
-        // Player State
-        const playerRadius = 1.0;
-        const playerHeight = 4.0;
-        playerGroup.position.set(0, 5, 20); // Start position
-        
-        const velocity = new THREE.Vector3();
-        const gravity = -1.2;
-        const jumpStrength = 0.6;
-        const moveSpeed = 0.3;
-        const rotationSpeed = 0.15;
-        
-        let isGrounded = false;
-        let currentFacing = 0; // angle
-
-        // Raycaster for physics
-        const raycaster = new THREE.Raycaster();
-        const downVector = new THREE.Vector3(0, -1, 0);
-
-        const clock = new THREE.Clock();
-
-        function animate() {
-            requestAnimationFrame(animate);
-            const delta = clock.getDelta();
-            const time = clock.getElapsedTime();
-
-            // --- Movement Input ---
-            let inputX = 0;
-            let inputZ = 0;
-
-            if (keys.w) inputZ += 1; // Forward
-            if (keys.s) inputZ -= 1; // Backward
-            if (keys.a) inputX -= 1; // Left
-            if (keys.d) inputX += 1; // Right
-
-            const isMoving = (inputX !== 0 || inputZ !== 0);
-
-            // --- Vertical Physics & Ground Raycasting ---
-            velocity.y += gravity * delta;
-            
-            // Cast ray downwards from slightly above player center to find floor
-            const originY = playerGroup.position.y + 2; 
-            raycaster.set(new THREE.Vector3(playerGroup.position.x, originY, playerGroup.position.z), downVector);
-            
-            const intersects = raycaster.intersectObjects(collidableMeshList);
-            isGrounded = false;
-
-            if (intersects.length > 0) {
-                const distanceToGround = intersects[0].distance;
-                const groundY = originY - distanceToGround;
-                
-                // If the player is falling or slightly penetrating the ground
-                if (playerGroup.position.y + velocity.y <= groundY + 0.1) {
-                    // Snap to ground
-                    playerGroup.position.y = groundY;
-                    velocity.y = 0;
-                    isGrounded = true;
-                }
-            }
-
-            // Jumping
-            if (keys.space && isGrounded) {
-                velocity.y = jumpStrength;
-                isGrounded = false;
-            }
-
-            // Apply Y velocity
-            playerGroup.position.y += velocity.y;
-
-            // --- Horizontal Movement & Wall Collision ---
-            if (isMoving) {
-                // Normalize input to prevent faster diagonal movement
-                const inputMag = Math.sqrt(inputX * inputX + inputZ * inputZ);
-                const normX = inputX / inputMag;
-                const normZ = inputZ / inputMag;
-                
-                // Calculate movement direction relative to camera yaw
-                const forward = new THREE.Vector3(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
-                const right = new THREE.Vector3(Math.cos(cameraYaw), 0, -Math.sin(cameraYaw));
-                
-                const moveDirX = forward.x * normZ + right.x * normX;
-                const moveDirZ = forward.z * normZ + right.z * normX;
-
-                const targetAngle = Math.atan2(moveDirX, moveDirZ);
-                
-                // Smooth rotation
-                let diff = targetAngle - currentFacing;
-                while (diff < -Math.PI) diff += Math.PI * 2;
-                while (diff > Math.PI) diff -= Math.PI * 2;
-                currentFacing += diff * rotationSpeed;
-                playerGroup.rotation.y = currentFacing;
-
-                // Proposed movement vector scaled by speed
-                const dirX = moveDirX * moveSpeed;
-                const dirZ = moveDirZ * moveSpeed;
-
-                // Horizontal Raycast to prevent walking through walls
-                const moveVector = new THREE.Vector3(dirX, 0, dirZ).normalize();
-                const horizOrigin = new THREE.Vector3(playerGroup.position.x, playerGroup.position.y + 1, playerGroup.position.z);
-                raycaster.set(horizOrigin, moveVector);
-                
-                const horizIntersects = raycaster.intersectObjects(collidableMeshList);
-                let hitWall = false;
-                
-                if (horizIntersects.length > 0) {
-                    if (horizIntersects[0].distance < playerRadius + 0.5) {
-                        // We hit a wall close enough to stop movement in this direction
-                        hitWall = true;
-                        // Minor correction to slide along walls could be added here, 
-                        // but stopping is sufficient for retro feel.
-                    }
-                }
-
-                if (!hitWall) {
-                    playerGroup.position.x += dirX;
-                    playerGroup.position.z += dirZ;
-                }
-
-                // Walk Animation (Leg Wobble)
-                const walkSpeed = 15;
-                const swing = Math.sin(time * walkSpeed) * 0.6;
-                lLegGroup.rotation.x = swing;
-                rLegGroup.rotation.x = -swing;
-                lArm.rotation.x = -swing * 0.5;
-                rArm.rotation.x = swing * 0.5;
-                
-                // Slight body bobbing
-                koopaBody.position.y = 2.5 + Math.abs(Math.sin(time * walkSpeed)) * 0.2;
-            } else {
-                // Idle posture
-                lLegGroup.rotation.x *= 0.8;
-                rLegGroup.rotation.x *= 0.8;
-                lArm.rotation.x *= 0.8;
-                rArm.rotation.x *= 0.8;
-                koopaBody.position.y = 2.5;
-            }
-
-            // Death Pit Reset (Falling off the map)
-            if (playerGroup.position.y < -20) {
-                playerGroup.position.set(0, 5, 20); // Reset to start
-                velocity.set(0,0,0);
-            }
-
-            // --- Camera Orbit Logic ---
-            const camDistance = 35; // Increased for a more zoomed-out view
-            const camOffset = new THREE.Vector3(
-                Math.sin(cameraYaw) * Math.cos(cameraPitch) * camDistance,
-                Math.sin(cameraPitch) * camDistance + 6, // Adjusted height offset for the new distance
-                Math.cos(cameraYaw) * Math.cos(cameraPitch) * camDistance
-            );
-            
-            const targetCamPos = playerGroup.position.clone().add(camOffset);
-            
-            // Smoothly move camera towards target orbit position
-            camera.position.lerp(targetCamPos, 0.3);
-            
-            // Look slightly above the player
-            const lookTarget = playerGroup.position.clone();
-            lookTarget.y += 3;
-            camera.lookAt(lookTarget);
-
-            // Render
-            renderer.render(scene, camera);
-        }
-
-        // Start Loop
-        animate();
-    </script>
+        playerMesh.position.copy(playerState.position);
+      }
+
+      // Camera Follow
+      const camOffset = new THREE.Vector3(0, 6, 14);
+      if (playerState.isFlying && playerState.activePlane) {
+        camOffset.applyQuaternion(playerState.activePlane.quaternion);
+        camera.position.copy(playerState.activePlane.position).add(camOffset);
+        camera.lookAt(playerState.activePlane.position);
+      } else {
+        camera.position.copy(playerState.position).add(camOffset);
+        camera.lookAt(playerState.position);
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      update();
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
 </body>
 </html>
